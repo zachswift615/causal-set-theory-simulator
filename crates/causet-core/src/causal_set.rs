@@ -10,7 +10,8 @@ use crate::point::SpacetimePoint;
 use crate::relations::{
     compute_links, CausalMatrix, CausalMatrixBuilder, CausalStatistics, LinkMatrix,
 };
-use crate::sprinkling::SprinklingResult;
+use crate::spacetime::Spacetime;
+use crate::sprinkling::{GenericSprinklingResult, SprinklingResult};
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use petgraph::Direction;
@@ -87,6 +88,124 @@ impl<const D: usize> CausalSet<D> {
         };
 
         Self::from_points_with_metadata(points, metadata)
+    }
+
+    /// Build a causal set from a generic sprinkling result using a specific spacetime.
+    ///
+    /// This is the Phase 4 method for curved spacetime sprinkling. It uses the
+    /// spacetime's `causally_precedes` method to determine causal relations,
+    /// which may differ from flat Minkowski spacetime.
+    ///
+    /// # Arguments
+    ///
+    /// * `result` - The sprinkling result containing points
+    /// * `spacetime` - The spacetime geometry for determining causal relations
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use causet_core::prelude::*;
+    ///
+    /// // Sprinkle into de Sitter
+    /// let ds = DeSitter::<4>::new(0.1, -10.0, -1.0, 5.0);
+    /// let result = sprinkle_spacetime(&ds, 500, 42);
+    ///
+    /// // Build causal set using de Sitter causal structure
+    /// let causet = CausalSet::from_generic_sprinkling(result, &ds);
+    /// ```
+    #[instrument(skip(result, spacetime), fields(n = result.points.len(), spacetime = %result.spacetime_name))]
+    pub fn from_generic_sprinkling<S: Spacetime<D>>(
+        result: GenericSprinklingResult<D>,
+        spacetime: &S,
+    ) -> Self {
+        debug_assert_eq!(
+            result.spacetime_name,
+            spacetime.name(),
+            "Spacetime mismatch: sprinkled in '{}' but building with '{}'",
+            result.spacetime_name,
+            spacetime.name()
+        );
+
+        info!(
+            n = result.points.len(),
+            spacetime = %result.spacetime_name,
+            ricci_scalar = result.ricci_scalar,
+            "Building causal set from generic sprinkling"
+        );
+
+        let metadata = CausalSetMetadata {
+            dimensions: D,
+            sprinkling_seed: Some(result.seed),
+            sprinkling_density: Some(result.points.len() as f64 / result.volume),
+            diamond_proper_time: None,
+            diamond_volume: Some(result.volume),
+        };
+
+        Self::from_points_with_spacetime(result.points, spacetime, metadata)
+    }
+
+    /// Build a causal set from points using a specific spacetime for causal relations.
+    fn from_points_with_spacetime<S: Spacetime<D>>(
+        mut points: Vec<SpacetimePoint<D>>,
+        spacetime: &S,
+        metadata: CausalSetMetadata,
+    ) -> Self {
+        let n = points.len();
+
+        // Sort points by time coordinate
+        let mut sorted_indices: Vec<usize> = (0..n).collect();
+        sorted_indices.sort_by(|&a, &b| {
+            points[a]
+                .t()
+                .partial_cmp(&points[b].t())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        // Reorder points to match sorted order
+        let sorted_points: Vec<SpacetimePoint<D>> = sorted_indices
+            .iter()
+            .map(|&i| points[i].clone())
+            .collect();
+        points = sorted_points;
+        let original_indices = sorted_indices;
+
+        // Build causal matrix using spacetime's causal relation
+        let mut causal_matrix = CausalMatrix::new(n);
+        for i in 0..n {
+            for j in i + 1..n {
+                if spacetime.causally_precedes(&points[i].coords, &points[j].coords) {
+                    causal_matrix.set_relation(i, j);
+                }
+            }
+        }
+
+        // Compute links
+        let link_matrix = compute_links(&causal_matrix);
+
+        // Build petgraph DAG from links
+        let mut dag = DiGraph::new();
+        let node_indices: Vec<NodeIndex> = (0..n).map(|i| dag.add_node(i)).collect();
+
+        for (i, j) in link_matrix.links() {
+            dag.add_edge(node_indices[i], node_indices[j], ());
+        }
+
+        debug!(
+            n = n,
+            relations = causal_matrix.relation_count(),
+            links = link_matrix.link_count(),
+            "Causal set construction complete (with spacetime)"
+        );
+
+        Self {
+            points,
+            original_indices,
+            causal_matrix,
+            link_matrix,
+            dag,
+            node_indices,
+            metadata,
+        }
     }
 
     fn from_points_with_metadata(

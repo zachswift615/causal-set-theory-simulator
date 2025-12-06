@@ -60,6 +60,7 @@ pub mod causal_set;
 pub mod geometry;
 pub mod point;
 pub mod relations;
+pub mod spacetime;
 pub mod sprinkling;
 
 /// Convenient re-exports for common usage.
@@ -73,7 +74,11 @@ pub mod prelude {
     pub use crate::relations::{
         CausalMatrix, CausalMatrixBuilder, CausalStatistics, LinkMatrix,
     };
-    pub use crate::sprinkling::{CausalDiamond, Sprinkler, SprinklingConfig, SprinklingResult};
+    pub use crate::spacetime::{conformal_causal_check, DeSitter, Minkowski, Spacetime};
+    pub use crate::sprinkling::{
+        sprinkle_spacetime, CausalDiamond, GenericSprinklingResult, Sprinkler, SprinklingConfig,
+        SprinklingResult,
+    };
 }
 
 // Re-export main types at crate root

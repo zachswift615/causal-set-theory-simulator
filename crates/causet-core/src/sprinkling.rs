@@ -483,6 +483,84 @@ pub struct SprinklingResult<const D: usize> {
     pub acceptance_rate: f64,
 }
 
+// ============================================================================
+// Generic Spacetime Sprinkling (Phase 4)
+// ============================================================================
+
+use crate::spacetime::Spacetime;
+
+/// Result of sprinkling into a generic spacetime.
+#[derive(Debug, Clone)]
+pub struct GenericSprinklingResult<const D: usize> {
+    /// The generated spacetime points
+    pub points: Vec<SpacetimePoint<D>>,
+
+    /// Name of the spacetime that was sprinkled
+    pub spacetime_name: String,
+
+    /// Random seed used
+    pub seed: u64,
+
+    /// Volume of the spacetime region
+    pub volume: f64,
+
+    /// Ricci scalar of the spacetime
+    pub ricci_scalar: f64,
+}
+
+/// Sprinkle a fixed number of points into any spacetime.
+///
+/// This is the generic version of sprinkling that works with any
+/// [`Spacetime`] implementation (Minkowski, de Sitter, etc.).
+///
+/// # Arguments
+///
+/// * `spacetime` - The spacetime to sprinkle into
+/// * `n_points` - Number of points to generate
+/// * `seed` - Random seed for reproducibility
+///
+/// # Example
+///
+/// ```rust
+/// use causet_core::spacetime::{Minkowski, DeSitter};
+/// use causet_core::sprinkling::sprinkle_spacetime;
+///
+/// // Sprinkle into Minkowski
+/// let mink = Minkowski::<4>::causal_diamond(5.0);
+/// let result = sprinkle_spacetime(&mink, 500, 42);
+/// assert_eq!(result.points.len(), 500);
+///
+/// // Sprinkle into de Sitter
+/// let ds = DeSitter::<4>::new(0.1, -10.0, -1.0, 5.0);
+/// let result = sprinkle_spacetime(&ds, 500, 42);
+/// assert!(result.ricci_scalar > 0.0);
+/// ```
+pub fn sprinkle_spacetime<S, const D: usize>(
+    spacetime: &S,
+    n_points: usize,
+    seed: u64,
+) -> GenericSprinklingResult<D>
+where
+    S: Spacetime<D>,
+{
+    let mut rng = ChaCha8Rng::seed_from_u64(seed);
+    let mut points = Vec::with_capacity(n_points);
+
+    for id in 0..n_points {
+        let coords = spacetime.sample_point(&mut rng);
+        let point = SpacetimePoint::with_batch(coords, id, 0);
+        points.push(point);
+    }
+
+    GenericSprinklingResult {
+        points,
+        spacetime_name: spacetime.name(),
+        seed,
+        volume: spacetime.volume(),
+        ricci_scalar: spacetime.ricci_scalar(),
+    }
+}
+
 impl<const D: usize> SprinklingResult<D> {
     /// Effective density (actual points / volume).
     pub fn effective_density(&self) -> f64 {
