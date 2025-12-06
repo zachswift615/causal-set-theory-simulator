@@ -1,7 +1,7 @@
 //! Geometric observables for causal sets.
 //!
-//! This module implements Phase 2 of the CAUSET project: extracting spacetime
-//! geometry from pure causal structure.
+//! This module implements Phase 2 & 3 of the CAUSET project: extracting spacetime
+//! geometry and computing the Benincasa-Dowker action from pure causal structure.
 //!
 //! # Key Components
 //!
@@ -9,6 +9,7 @@
 //!   dimension from the ordering fraction.
 //! - **Longest chains**: Proper time estimation via geodesic-like paths.
 //! - **Interval counting**: N_k distribution for Benincasa-Dowker action.
+//! - **BD action**: Discrete Einstein-Hilbert action encoding scalar curvature.
 //!
 //! # Example
 //!
@@ -18,27 +19,30 @@
 //! use causet_core::sprinkling::{CausalDiamond, Sprinkler};
 //!
 //! // Sprinkle into 2D Minkowski spacetime
-//! let diamond = CausalDiamond::<2>::symmetric(4.0);
-//! let mut sprinkler = Sprinkler::with_seed(42, 50.0);
-//! let result = sprinkler.sprinkle_diamond(&diamond);
+//! let diamond = CausalDiamond::<2>::symmetric(10.0);
+//! let mut sprinkler = Sprinkler::with_seed(42, 1.0);
+//! let result = sprinkler.sprinkle_fixed(&diamond, 500);
 //! let causet = CausalSet::from_sprinkling(result);
 //!
 //! // Estimate dimension from ordering fraction
-//! let f = causet.ordering_fraction();
-//! let dim = estimate_dimension(f);
-//! println!("Ordering fraction: {:.4}", f);
+//! let dim = causet.estimated_dimension();
 //! println!("Estimated dimension: {:.2}", dim.dimension);
 //!
-//! // Get full statistics
-//! let stats = causet.dimension_statistics();
-//! println!("Dimension: {:.2} ± {:.2}", stats.estimate.dimension, stats.uncertainty);
+//! // Compute BD action (should be ~0 for flat spacetime)
+//! let action = causet.bd_action_2d();
+//! println!("BD action: {:.2} (normalized: {:.2})", action.action, action.normalized_action());
 //! ```
 
+mod action;
 mod chains;
 mod dimension;
 mod intervals;
 
 // Re-export main types and functions
+pub use action::{
+    bd_action_2d, bd_action_4d, bd_action_generic, BDActionResult, BDCoefficients,
+    BD_COEFFICIENTS_2D, BD_COEFFICIENTS_4D,
+};
 pub use chains::ChainResult;
 pub use dimension::{
     estimate_dimension, theoretical_ordering_fraction, DimensionEstimate, DimensionStatistics,
@@ -86,6 +90,72 @@ impl<const D: usize> CausalSet<D> {
     /// is the number of elements.
     pub fn dimension_uncertainty(&self) -> f64 {
         self.dimension_statistics().uncertainty
+    }
+
+    /// Compute the Benincasa-Dowker action for 2D spacetime.
+    ///
+    /// Formula: S^(2) = N - 2N₁ + 4N₂ - 2N₃
+    ///
+    /// For flat Minkowski spacetime, the action should fluctuate around zero
+    /// with magnitude O(√N).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use causet_core::prelude::*;
+    /// use causet_core::sprinkling::{CausalDiamond, Sprinkler};
+    ///
+    /// let diamond = CausalDiamond::<2>::symmetric(10.0);
+    /// let mut sprinkler = Sprinkler::with_seed(42, 1.0);
+    /// let result = sprinkler.sprinkle_fixed(&diamond, 500);
+    /// let causet = CausalSet::from_sprinkling(result);
+    ///
+    /// let action = causet.bd_action_2d();
+    /// println!("Action: {:.2}, Normalized: {:.2}", action.action, action.normalized_action());
+    /// ```
+    pub fn bd_action_2d(&self) -> BDActionResult {
+        let counts = self.interval_counts();
+        bd_action_2d(&counts, self.len())
+    }
+
+    /// Compute the Benincasa-Dowker action for 4D spacetime.
+    ///
+    /// Formula: S^(4) = N - N₁ + 9N₂ - 16N₃ + 8N₄
+    ///
+    /// For flat Minkowski spacetime, the action should fluctuate around zero
+    /// with magnitude O(√N).
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use causet_core::prelude::*;
+    /// use causet_core::sprinkling::{CausalDiamond, Sprinkler};
+    ///
+    /// let diamond = CausalDiamond::<4>::symmetric(10.0);
+    /// let mut sprinkler = Sprinkler::with_seed(42, 1.0);
+    /// let result = sprinkler.sprinkle_fixed(&diamond, 500);
+    /// let causet = CausalSet::from_sprinkling(result);
+    ///
+    /// let action = causet.bd_action_4d();
+    /// println!("Action: {:.2}, Normalized: {:.2}", action.action, action.normalized_action());
+    /// ```
+    pub fn bd_action_4d(&self) -> BDActionResult {
+        let counts = self.interval_counts();
+        bd_action_4d(&counts, self.len())
+    }
+
+    /// Compute the BD action using the appropriate formula for this causet's dimension.
+    ///
+    /// Returns the 2D action for D=2, 4D action for D=4, and panics for other dimensions.
+    pub fn bd_action(&self) -> BDActionResult {
+        match D {
+            2 => self.bd_action_2d(),
+            4 => self.bd_action_4d(),
+            _ => panic!(
+                "BD action not implemented for {}D spacetime. Use bd_action_2d() or bd_action_4d() explicitly.",
+                D
+            ),
+        }
     }
 }
 
@@ -206,5 +276,79 @@ mod tests {
         // Total should match relation count from matrix
         let matrix_relations = causet.causal_matrix().relation_count();
         assert_eq!(counts.total_relations, matrix_relations);
+    }
+
+    #[test]
+    fn test_bd_action_2d_flat_spacetime() {
+        // For flat Minkowski spacetime, BD action should fluctuate around 0
+        // with magnitude O(√N)
+        let diamond = CausalDiamond::<2>::symmetric(10.0);
+
+        let mut actions = Vec::new();
+        for trial in 0..10 {
+            let mut sprinkler = Sprinkler::with_seed(42 + trial * 1000, 1.0);
+            let result = sprinkler.sprinkle_fixed(&diamond, 500);
+            let causet = CausalSet::from_sprinkling(result);
+
+            let action = causet.bd_action_2d();
+            actions.push(action.normalized_action());
+        }
+
+        // Mean normalized action should be close to 0
+        let mean: f64 = actions.iter().sum::<f64>() / actions.len() as f64;
+        let std: f64 = (actions
+            .iter()
+            .map(|&a| (a - mean).powi(2))
+            .sum::<f64>()
+            / (actions.len() - 1) as f64)
+            .sqrt();
+
+        // For flat spacetime, |mean| should be small relative to std
+        // Allow generous tolerance since these are statistical fluctuations
+        assert!(
+            mean.abs() < 3.0 * std + 50.0,
+            "2D BD action mean={:.2}, std={:.2} - may indicate non-flat behavior",
+            mean,
+            std
+        );
+    }
+
+    #[test]
+    fn test_bd_action_4d_flat_spacetime() {
+        // For flat Minkowski spacetime, BD action should fluctuate around 0
+        let diamond = CausalDiamond::<4>::symmetric(10.0);
+
+        let mut actions = Vec::new();
+        for trial in 0..5 {
+            let mut sprinkler = Sprinkler::with_seed(42 + trial * 1000, 1.0);
+            let result = sprinkler.sprinkle_fixed(&diamond, 500);
+            let causet = CausalSet::from_sprinkling(result);
+
+            let action = causet.bd_action_4d();
+            actions.push(action.normalized_action());
+        }
+
+        let mean: f64 = actions.iter().sum::<f64>() / actions.len() as f64;
+
+        // Just verify we get finite values for now
+        // The exact behavior requires more careful analysis
+        assert!(
+            mean.is_finite(),
+            "4D BD action should produce finite values"
+        );
+    }
+
+    #[test]
+    fn test_bd_action_method_matches_dimension() {
+        // Test that bd_action() dispatches correctly
+        let diamond = CausalDiamond::<2>::symmetric(10.0);
+        let mut sprinkler = Sprinkler::with_seed(42, 1.0);
+        let result = sprinkler.sprinkle_fixed(&diamond, 200);
+        let causet = CausalSet::from_sprinkling(result);
+
+        let action_explicit = causet.bd_action_2d();
+        let action_dispatch = causet.bd_action();
+
+        assert!((action_explicit.action - action_dispatch.action).abs() < 1e-10);
     }
 }

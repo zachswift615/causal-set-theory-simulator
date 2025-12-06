@@ -66,7 +66,8 @@ pub mod sprinkling;
 pub mod prelude {
     pub use crate::causal_set::{CausalSet, CausalSetBuilder, CausalSetMetadata};
     pub use crate::geometry::{
-        estimate_dimension, ChainResult, DimensionEstimate, DimensionStatistics, IntervalCounts,
+        bd_action_2d, bd_action_4d, estimate_dimension, BDActionResult, ChainResult,
+        DimensionEstimate, DimensionStatistics, IntervalCounts,
     };
     pub use crate::point::{Point2D, Point3D, Point4D, SpacetimePoint};
     pub use crate::relations::{
@@ -77,7 +78,7 @@ pub mod prelude {
 
 // Re-export main types at crate root
 pub use causal_set::CausalSet;
-pub use geometry::{estimate_dimension, DimensionEstimate};
+pub use geometry::{estimate_dimension, BDActionResult, DimensionEstimate};
 pub use point::SpacetimePoint;
 pub use relations::CausalMatrix;
 pub use sprinkling::{CausalDiamond, Sprinkler};
