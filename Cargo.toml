@@ -1,0 +1,42 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/causet-core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Zach Swift"]
+repository = "https://github.com/zachswift/project-causet"
+description = "Causal set quantum gravity simulation toolkit"
+
+[workspace.dependencies]
+# Core dependencies
+petgraph = "0.7"
+nalgebra = { version = "0.33", features = ["serde-serialize"] }
+rayon = "1.10"
+rand_distr = "0.4"
+
+# Random number generation with reproducibility
+rand = "0.8"
+rand_chacha = "0.3"
+
+# Serialization for experiment reproducibility
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging and metrics
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Testing
+approx = "0.5"
+
+# Visualization (future phase)
+# rerun = "0.18"
+
+[profile.release]
+lto = true
+codegen-units = 1

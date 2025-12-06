@@ -1,0 +1,21 @@
+[package]
+name = "causet-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Core data structures for causal set theory: points, sprinkling, and causal relations"
+
+[dependencies]
+petgraph.workspace = true
+nalgebra.workspace = true
+rayon.workspace = true
+rand.workspace = true
+rand_chacha.workspace = true
+rand_distr.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+approx.workspace = true
